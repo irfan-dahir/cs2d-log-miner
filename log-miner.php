@@ -3,12 +3,7 @@
  *	Log Miner 0.1.0 not-even-alpha
  *	Copyright (c) 2016 Nighthawk/Nekomata (#116310)
  */
-/*
-	todo
-	-- player playtime
-	-- bug fix
-	-- refactoring
-*/
+
 
 const VALID_FILETYPE = "txt";
 const LOGGING = true;

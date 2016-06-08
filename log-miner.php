@@ -4,7 +4,6 @@
  *	Copyright (c) 2016 Nighthawk/Nekomata (#116310)
  */
 
-
 const VALID_FILETYPE = "txt";
 const LOGGING = true;
 

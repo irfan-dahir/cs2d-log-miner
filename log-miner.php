@@ -1,7 +1,8 @@
 <?php
-/*
- *	Log Miner 0.1.0 not-even-alpha
- *	Copyright (c) 2016 Nighthawk/Nekomata (#116310)
+/**
+ * Log Miner 
+ * @version 0.1.0 not-even-alpha
+ * Copyright (c) 2016 @author Nighthawk/Nekomata (#116310)
  */
 
 class LogMiner {
@@ -12,6 +13,9 @@ class LogMiner {
 	protected $directory = array();
 	protected $log = null;
 
+	/**
+	* Construct is used for creating/handling the log file
+	*/
 	public function __construct() {
 		if (self::LOGGING) {
 			if (!file_exists("log-miner.log")) {
@@ -21,30 +25,37 @@ class LogMiner {
 			$this->log = fopen("log-miner.log", "a+");
 		}
 	}
+
+	/**
+	* Destruct closes the log handle if there's one
+	*/
 	public function __destruct() {
 		if (self::LOGGING) {
 			fclose($this->log);
 		}
 	}
+
 	/**
 	 * Extract statistical or string data from the logs
-	 * @param string $fileOrDir	A filename or directory
+	 * @param string $fileOrDir	A file path or directory
+	 * @param string $string an optional argument which triggers text based searching
 	 * @return array
 	 */
-	public function Extract($fileOrDir, $string = null){
+	public function Extract($fileOrDir, $string = null) {
 		if($this->load($fileOrDir)){
 			foreach ($this->directory as $key => $file) {
 				$fileName = pathinfo($file, PATHINFO_FILENAME);
 				$fileType = pathinfo($file, PATHINFO_EXTENSION);
-				if($fileType === self::VALID_FILETYPE){
+				if (self::validFileType($fileType)) {
 					list($date, $time, $timestampUNIX, $timestamp) = $this->parseLogTimeFormats($fileName);
 					$log[ $timestampUNIX ] = array();
-					$log[ $timestampUNIX ]["size"] = filesize($file);
+					$log[ $timestampUNIX ]["filesize"] = filesize($file);
+					clearstatcache(); //no filesize caching
 					$log[ $timestampUNIX ]["date"] = $date;
 					$log[ $timestampUNIX ]["time"] = $time;
 					$log[ $timestampUNIX ]["timestamp"] = $timestamp;
 					$log[ $timestampUNIX ]["timestamp-unix"] = $timestampUNIX;
-					$log[ $timestampUNIX ]["player"] = array();
+					$log[ $timestampUNIX ]["filepath"] = $file;
 					$log[ $timestampUNIX ]["server"] = array(
 						"server-list-update-requests"=>array(),
 						"server-list-updates"=>array(),
@@ -52,10 +63,15 @@ class LogMiner {
 						"transfer-files"=>array(),
 						"missing-transfer-files"=>array(),
 					);
+					$log[ $timestampUNIX ]["player"] = array();
 					if(is_null($string)){
 						$this->mineData($file, $log[ $timestampUNIX ]);
 					}else{
-						$this->mineString($file, $log[ $timestampUNIX ], $string);
+						if(!empty($string)){
+							$this->mineString($file, $log[ $timestampUNIX ], $string);
+						}else{
+							self::log("error: empty string");
+						}
 					}
 				}else{
 					self::log("error: invalid filetype");
@@ -69,9 +85,16 @@ class LogMiner {
 		}
 	}
 
-	protected function mineData($file, &$array){
+	/**
+	* mine statistical cs2d log stuff
+	* internal method triggered by @see self::Extract()
+	* @param string $file filepath
+	* @param array $array
+	*/
+	private function mineData($file, &$array){
+		self::log("debug: parsing ".$array["filepath"]);
 		$lines = file($file);
-		if(preg_match("/Counter-Strike 2D [0-9].[0-9].[0-9].[0-9] Logfile - [0-9]{2} [A-Z][a-z]{2} [0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}/", $lines[0])){
+		if(preg_match("/Counter-Strike 2D ([a-z]{0,}|) [0-9].[0-9].[0-9].[0-9] Logfile - [0-9]{2} [A-Z][a-z]{2} [0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}/", $lines[0])){
 			$array["header"] = trim($lines[0]);
 		}
 		foreach ($lines as $lineNumber => $line) {
@@ -80,8 +103,8 @@ class LogMiner {
 			}elseif(preg_match("/U.S.G.N.: Serverlist entry updated/", $line)){
 				$array["server"]["server-list-updates"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -36));
 			}elseif(preg_match("/ connected$/", $line)){
-				$playerRaw = utf8_encode(substr($line, 11, -11));
-				$player = utf8_encode(substr($line, 11, -11));
+				$playerRaw = utf8_encode(substr($line, 11, -11)); //utf8
+				$player = utf8_encode(substr($line, 11, -11)); //utf8
 				$playerOS = false;
 				for($i=1;$i<=5;$i++){
 					$OSScan = $lines[$lineNumber-$i];
@@ -93,7 +116,7 @@ class LogMiner {
 						break;
 					}
 				}
-				$playerData = utf8_encode($lines[$lineNumber+1]);
+				$playerData = utf8_encode($lines[$lineNumber+1]); //utf8
 				$ipUnfiltered = array();
 				$usgnUnfiltered = array();
 				preg_match("/is using IP (.*) and/", $playerData, $ipUnfiltered);
@@ -186,10 +209,23 @@ class LogMiner {
 					);
 				}
 			}elseif(preg_match("/has left the game/", $line)){
-				$playerRaw = substr($line, 11, -11);
-				$reason = substr($playerRaw, (strpos($line, "has left the game")+17));
-				$array["player"]["disconnect"][] = (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3));
-				$array["player"]["disconnect-reason"][] = $reason;
+				$playerRaw = utf8_encode(trim(substr($line,11)));
+				$playerRawArr = array();
+				$reason = false;
+				if (preg_match("/(.*) has left the game \(/", $playerRaw)) {
+					preg_match("/^(.*) has left the game \((.*)\)/", $playerRaw, $playerRawArr);
+					if(!empty($playerRawArr[2])){
+						$reason = $playerRawArr[2];
+					}
+				}
+				elseif (preg_match("/^(.*) has left the game$/", $playerRaw)) {
+					preg_match("/^(.*) has left the game/", $playerRaw, $playerRawArr);
+				}
+				$player = $playerRawArr[1];
+				//make sure it's not a type-2
+				if(isset($array["player"][$player]["usgn"])){
+					$array["player"][$player]["disconnect"][ (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3)) ] = $reason;
+				}
 			}elseif(preg_match("/----- Mapchange -----/", $line)){
 				$array["server"]["map-changes"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -24));
 				//$array["server"]["map-changes"][] = substr($line, 1, -24); in hh:mm:ss format
@@ -210,12 +246,14 @@ class LogMiner {
 		}
 		//return $array;
 	}
-	protected function mineString($file, &$array, $string){
+
+	protected function mineString($file, &$array, $string) {
 		$lines = file($file);
 		foreach ($lines as $lineNumber => $line) {
 		}
 	}
-	/*
+
+	/**
 	 * Convert the log's filename into a proper timestamp
 	 */
 	public function parseLogTimeFormats($filename) {
@@ -227,7 +265,7 @@ class LogMiner {
 			$date, $time, $this->toUnixTimestamp($date,$time), ($date." ".$time)
 			);
 	}
-	/*
+	/**
 	 * Convert CS2D's timestamp to unix/epoch format
 	 */
 	public function toUnixTimestamp($date, $time) {
@@ -237,7 +275,7 @@ class LogMiner {
 	/*
 	 * Queue the given file/directory files
 	 */
-	private function load($fileOrDir){
+	private function load($fileOrDir) {
 		if(is_dir($fileOrDir)){
 			$this->directory = $this->scanDirectory($fileOrDir);
 			return (count($this->directory) > 0) ? true : false; 
@@ -251,22 +289,34 @@ class LogMiner {
 	}
 
 	/*
-	 * Scan the given directory
+	 * Scan the given directory for valid cs2d log files
 	 */
 	private function scanDirectory($directory) {
 		$files = array_diff(scandir($directory), array(".", ".."));
 		foreach ($files as $key => $value) {
-			$files[$key] = $directory."/".$value;
+			$filepath = $directory."/".$value;
+			if (!self::validateLogHeader($filepath)) {
+				unset($files[$key]);
+			}else{
+				$files[$key] = $filepath;
+			}
 		}
 		return $files;
 	}
 
 	private function log($text) {
 		if (self::LOGGING) {
-			fwrite($this->log, $text);
+			fwrite($this->log, "[".date("d-m-Y H.i.s") . substr((string)microtime(), 1, 8)."]".$text."\n");
 		}
 	}
 
+	private function validateLogHeader($file) {
+		if (preg_match("/Counter-Strike 2D( b| a|) [0-9].[0-9].[0-9].[0-9] Logfile - [0-9]{2} [A-Z][a-z]{2} [0-9]{4}, [0-9]{2}:[0-9]{2}:[0-9]{2}/", fgets(fopen($file, 'r')))) {
+			return true;
+		}
+		return false;
+	}
+	
 	private function validFileType($ext){
 		if (preg_match("/".self::VALID_FILETYPE."/", $ext)) {
 			return true;
@@ -275,7 +325,7 @@ class LogMiner {
 	}
 
 	public function DataToJSON($dataArr, $save=false){
-		if (is_array($dataArr) && !empty($dataArr)) {
+		if (is_array($dataArr) && !empty($dataArr) ) {
 			if($save){
 				$f = fopen(date("d-M-Y_H-i-s",$dataArr["timestamp-unix"]).".json", "w+");
 				fwrite($f, json_encode($dataArr));
@@ -286,6 +336,12 @@ class LogMiner {
 		}else{
 			self::log("error: not array/empty array");
 			return false;
+		}
+	}
+
+	public function ExtractedToJSON($extracted, $save=false){
+		foreach ($extracted as $key => $value) {
+			self::DataToJSON($value, $save);
 		}
 	}
 
@@ -302,18 +358,17 @@ class LogMiner {
 		return $d;
 	}
 }
+
 require 'Ubench.php';
 $ubench = new Ubench;
 $ubench->start();
 $miner = new LogMiner;
-//var_dump($miner->extract("logs")[1462042832]["player"]);
 $extracted = $miner->Extract("logs");
-foreach ($extracted as $logfile => $data) {
-	$miner->DataToJSON($data, true);
-	echo json_last_error()."<br>";
-}
+//var_dump($extracted[1462042832]["player"]["copy"]);
+$miner->ExtractedToJSON($extracted, true);
 $ubench->end();
 echo "Processed ".count($extracted)." log(s) in ".$ubench->getTime()."<br>";
 echo "Memory Usage: ".$ubench->getMemoryUsage()."<br>";
 echo "Memory Peak: ".$ubench->getMemoryPeak()."<br>";
+var_dump($extracted);
 ?>

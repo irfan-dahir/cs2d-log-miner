@@ -1,7 +1,17 @@
 # LOG::Miner
-A powerful PHP Library which extracts every bit of information it can get from CS2D Logs.
+A powerful PHP Library which extracts every bit of information it can get from your CounterStrike2D Logs.
 
 ##Changelog
+
+###0.1.0 not-even-alpha build 4
+1. Added more logging including debug logs
+2. added method `validateLogHeader` which checks whether the file loaded for logging is the real thing or not
+3. JSON saved files are now named after the log files, with the exception of the extention/filetype
+4. Fixed method `scanDirectory` not properly loading files for extraction
+5. Added data `disconnect` and `disconnect-reason` for players.
+6. `disconnect` and `disconnect-reason` are **NOT** logged for player data TYPE-2 arrays. *Yet*.
+7. Log timestamps are now down to the microsecond
+8. Added method `ExtractedToJSON` which parses the extracted returning array into JSON. It uses the previous `DataToJSON`. `DataToJSON` only parses the log file array (which is keyed with log unix timestamps) which is *in* the returning extracted array.
 
 ###0.1.0 not-even-alpha build 3
 1. Added saving as JSON

@@ -277,7 +277,7 @@ class LogMiner {
 	public function DataToJSON($dataArr, $save=false){
 		if (is_array($dataArr) && !empty($dataArr)) {
 			if($save){
-				$f = fopen($dataArr["timestamp"].".json", "w+");
+				$f = fopen(date("d-M-Y_H-i-s",$dataArr["timestamp-unix"]).".json", "w+");
 				fwrite($f, json_encode($dataArr));
 				fclose($f);
 			}else{

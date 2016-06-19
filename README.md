@@ -3,6 +3,13 @@ A powerful PHP Library which extracts every bit of information it can get from C
 
 ##Changelog
 
+###0.1.0 not-even-alpha build 3
+1. Added saving as JSON
+2. UTF8 encoding for player names (those weird player names)
+3. `LOGGING` AND `VALID_FILETYPE` are now part of the class
+4. Added `validFileType()` for proper extension checking
+5. Added basic error logging
+
 ###0.1.0 not-even-alpha build 2
 1. Major changes in player data types
 2. Players are now keyed by player names

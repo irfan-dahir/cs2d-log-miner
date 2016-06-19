@@ -4,24 +4,25 @@
  *	Copyright (c) 2016 Nighthawk/Nekomata (#116310)
  */
 
-const VALID_FILETYPE = "txt";
-const LOGGING = true;
+class LogMiner {
 
-class LogMiner{
-	
+	const VALID_FILETYPE = "txt";
+	const LOGGING = true;
 
 	protected $directory = array();
 	protected $log = null;
-	private $workingArrayPtr = null;
 
-	public function __construct(){
-		if(LOGGING){
-			if(!file_exists("log-miner.log")){$f = fopen("log-miner.log", "w+");fclose($f);}
+	public function __construct() {
+		if (self::LOGGING) {
+			if (!file_exists("log-miner.log")) {
+				$f = fopen("log-miner.log", "w+");
+				fclose($f);
+			}
 			$this->log = fopen("log-miner.log", "a+");
 		}
 	}
-	public function __destruct(){
-		if(LOGGING){
+	public function __destruct() {
+		if (self::LOGGING) {
 			fclose($this->log);
 		}
 	}
@@ -35,7 +36,7 @@ class LogMiner{
 			foreach ($this->directory as $key => $file) {
 				$fileName = pathinfo($file, PATHINFO_FILENAME);
 				$fileType = pathinfo($file, PATHINFO_EXTENSION);
-				if($fileType === VALID_FILETYPE){
+				if($fileType === self::VALID_FILETYPE){
 					list($date, $time, $timestampUNIX, $timestamp) = $this->parseLogTimeFormats($fileName);
 					$log[ $timestampUNIX ] = array();
 					$log[ $timestampUNIX ]["size"] = filesize($file);
@@ -57,28 +58,14 @@ class LogMiner{
 						$this->mineString($file, $log[ $timestampUNIX ], $string);
 					}
 				}else{
-					//error not valid
+					self::log("error: invalid filetype");
 					return false;
 				}
 			}
 			return $log;
 		}else{
-			//error not found
+			self::log("error: file not found");
 			return false;
-		}
-	}
-
-	public function DataToJSON($dataArr, $save=false){
-		if(isset($dataArr["timestamp"])){
-			if($save){
-				$f = fopen($dataArr["timestamp"]."json", "w+");
-				fwrite($f, json_encode($dataArr));
-				fclose($f);
-			}else{
-				return json_encode($dataArr);
-			}
-		}else{
-			//error
 		}
 	}
 
@@ -93,8 +80,8 @@ class LogMiner{
 			}elseif(preg_match("/U.S.G.N.: Serverlist entry updated/", $line)){
 				$array["server"]["server-list-updates"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -36));
 			}elseif(preg_match("/ connected$/", $line)){
-				$playerRaw = substr($line, 11, -11);
-				$player = substr($line, 11, -11);
+				$playerRaw = utf8_encode(substr($line, 11, -11));
+				$player = utf8_encode(substr($line, 11, -11));
 				$playerOS = false;
 				for($i=1;$i<=5;$i++){
 					$OSScan = $lines[$lineNumber-$i];
@@ -106,7 +93,7 @@ class LogMiner{
 						break;
 					}
 				}
-				$playerData = $lines[$lineNumber+1];
+				$playerData = utf8_encode($lines[$lineNumber+1]);
 				$ipUnfiltered = array();
 				$usgnUnfiltered = array();
 				preg_match("/is using IP (.*) and/", $playerData, $ipUnfiltered);
@@ -118,15 +105,15 @@ class LogMiner{
 				if(array_key_exists($player, $array["player"])){
 					//if player exists, check if it's player data array type 1 or 2
 					//if it's a type 1 then update or convert to type 2
-					echo $player." EXISTS <br>";
+					//echo $player." EXISTS <br>";
 					if(array_key_exists("ip", $array["player"][$player])){
-						echo $player." IS TYPE 1 <br>";
+						//echo $player." IS TYPE 1 <br>";
 						//if it's the same ip under the same name
 						if($array["player"][$player]["ip"] == $playerIP){
-							echo $player." TYPE 1 IS SAME PLAYER ".$playerIP."<br>";
+							//echo $player." TYPE 1 IS SAME PLAYER ".$playerIP."<br>";
 							$array["player"][$player]["connect"][] = (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3));
 						}else{
-							echo $player." TYPE 1 IS DIFFERENT PLAYER ".$playerIP."<br>";
+							//echo $player." TYPE 1 IS DIFFERENT PLAYER ".$playerIP."<br>";
 						//if it's a different ip under the same name
 						//then convert to data type 2 & update
 							//backup previous type 1
@@ -152,14 +139,14 @@ class LogMiner{
 							$array["player"][$player][] = $tempPlayerArray;
 						}
 					}else{
-						echo $player." IS TYPE 2<br>";
+						//echo $player." IS TYPE 2<br>";
 						//if it's a type 2 then check if player is registered in type 2 & update
 						//else register a new one
 						$exists = false;
 						foreach ($array["player"][$player] as $key => $data) {
 							if($data["ip"] == $playerIP){
 								//player IP exists // update
-								echo $player." TYPE 2 IS SAME PLAYER ".$playerIP."<br>";
+								//echo $player." TYPE 2 IS SAME PLAYER ".$playerIP."<br>";
 								$array["player"][$player][$key]["connect"][] = (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3));
 								$exists = true;
 								break;
@@ -167,7 +154,7 @@ class LogMiner{
 						}
 						if(!$exists){
 							//register new player
-							echo $player." TYPE 2 IS DIFFERENT PLAYER ".$playerIP."<br>";
+							//echo $player." TYPE 2 IS DIFFERENT PLAYER ".$playerIP."<br>";
 							$array["player"][$player][] = array(
 								//"name"=>$player,
 								"usgn"=>$playerUSGN,
@@ -184,7 +171,7 @@ class LogMiner{
 					}
 				}else{
 					//if player does not exist, then register new type 1
-					echo $player." DOESNT EXIST ".$playerIP."<br>";
+					//echo $player." DOESNT EXIST ".$playerIP."<br>";
 					$array["player"][$player] = array(
 						//"name"=>$player,
 						"usgn"=>$playerUSGN,
@@ -231,11 +218,11 @@ class LogMiner{
 	/*
 	 * Convert the log's filename into a proper timestamp
 	 */
-	protected function parseLogTimeFormats($filename){
+	public function parseLogTimeFormats($filename) {
 		$div = explode("_", $filename);
-		//$date = explode("-", $div[0]);
 		$date = date("d-m-Y", strtotime($div[0]));
 		$time = preg_replace("/-/", ":", $div[1]);
+
 		return array(
 			$date, $time, $this->toUnixTimestamp($date,$time), ($date." ".$time)
 			);
@@ -243,19 +230,19 @@ class LogMiner{
 	/*
 	 * Convert CS2D's timestamp to unix/epoch format
 	 */
-	protected function toUnixTimestamp($date, $time){
+	public function toUnixTimestamp($date, $time) {
 		return (int)strtotime($date." ".$time);
 	}
 
 	/*
 	 * Queue the given file/directory files
 	 */
-	protected function load($fileOrDir){
+	private function load($fileOrDir){
 		if(is_dir($fileOrDir)){
 			$this->directory = $this->scanDirectory($fileOrDir);
 			return (count($this->directory) > 0) ? true : false; 
 		}else{
-			if(file_exists($fileOrDir)){
+			if(file_exists($fileOrDir)) {
 				array_push($this->directory, $fileOrDir);
 			}else{
 				return false;
@@ -266,27 +253,65 @@ class LogMiner{
 	/*
 	 * Scan the given directory
 	 */
-	protected function scanDirectory($directory){
+	private function scanDirectory($directory) {
 		$files = array_diff(scandir($directory), array(".", ".."));
 		foreach ($files as $key => $value) {
 			$files[$key] = $directory."/".$value;
 		}
 		return $files;
 	}
-	private function log($text){
-		if(LOGGING){
+
+	private function log($text) {
+		if (self::LOGGING) {
 			fwrite($this->log, $text);
 		}
 	}
-}
 
+	private function validFileType($ext){
+		if (preg_match("/".self::VALID_FILETYPE."/", $ext)) {
+			return true;
+		}
+		return false;
+	}
+
+	public function DataToJSON($dataArr, $save=false){
+		if (is_array($dataArr) && !empty($dataArr)) {
+			if($save){
+				$f = fopen($dataArr["timestamp"].".json", "w+");
+				fwrite($f, json_encode($dataArr));
+				fclose($f);
+			}else{
+				return json_encode($dataArr);
+			}
+		}else{
+			self::log("error: not array/empty array");
+			return false;
+		}
+	}
+
+	// some player names are not utf8 encoded, so we take care of that for json
+	//utf8ize - stackoverflow.com/questions/19361282/why-would-json-encode-returns-an-empty-string
+	public function utf8ize($d){
+		if (is_array($d)) {
+			foreach ($d as $k => $v) {
+				$d[$k] = self::utf8ize($v);
+			}
+		} else {
+			return utf8_encode($d);
+		}
+		return $d;
+	}
+}
 require 'Ubench.php';
 $ubench = new Ubench;
 $ubench->start();
 $miner = new LogMiner;
 //var_dump($miner->extract("logs")[1462042832]["player"]);
 $extracted = $miner->Extract("logs");
-var_dump($extracted[1462042832]["player"]);
+foreach ($extracted as $logfile => $data) {
+	$miner->DataToJSON($data, true);
+	echo json_last_error()."<br>";
+}
 $ubench->end();
 echo "Processed ".count($extracted)." log(s) in ".$ubench->getTime()."<br>";
 echo "Memory Usage: ".$ubench->getMemoryUsage()."<br>";

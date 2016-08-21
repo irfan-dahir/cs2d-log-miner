@@ -1,7 +1,7 @@
 <?php
 /**
  * Log Miner 
- * @version 0.1.0 not-even-alpha
+ * @version 0.5.0.0 alpha
  * Copyright (c) 2016 @author Nighthawk/Nekomata (#116310)
  */
 
@@ -62,6 +62,7 @@ class LogMiner {
 						"map-changes"=>array(),
 						"transfer-files"=>array(),
 						"missing-transfer-files"=>array(),
+						"stats-generated"=>array(),
 					);
 					$log[ $timestampUNIX ]["player"] = array();
 					if(is_null($string)){
@@ -99,78 +100,90 @@ class LogMiner {
 		}
 		foreach ($lines as $lineNumber => $line) {
 			if(preg_match("/U.S.G.N.: Sending serverlist UPDATE-request.../", $line)){
-				$array["server"]["server-list-update-requests"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -48));
+				$array["server"]["server-list-update-requests"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, 8));
 			}elseif(preg_match("/U.S.G.N.: Serverlist entry updated/", $line)){
-				$array["server"]["server-list-updates"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -36));
-			}elseif(preg_match("/ connected$/", $line)){
-				$playerRaw = utf8_encode(substr($line, 11, -11)); //utf8
-				$player = utf8_encode(substr($line, 11, -11)); //utf8
+				$array["server"]["server-list-updates"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, 8));
+			}elseif(preg_match("/(.*) is using IP (.*):(.*) and no U.S.G.N. ID/", $line) || preg_match("/(.*) is using IP (.*):(.*) and U.S.G.N. ID #(.*)/", $line)){
+
+				$time = substr($line, 1, 8);
+				$playerDataRaw = utf8_encode(substr($line, 11));
+				$playerData = array();
+				if (preg_match("/(.*) is using IP (.*):(.*) and U.S.G.N. ID #(.*)/", $playerDataRaw)) {
+					preg_match("/(.*) is using IP (.*):(.*) and U.S.G.N. ID #(.*)/", $playerDataRaw, $playerData);
+				}
+				elseif (preg_match("/(.*) is using IP (.*):(.*) and no U.S.G.N. ID/", $playerDataRaw)) {
+					preg_match("/(.*) is using IP (.*):(.*) and no U.S.G.N. ID/", $playerDataRaw, $playerData);
+					$playerData[] = false;
+				} else {
+					$playerData = false;
+				}
 				$playerOS = false;
-				for($i=1;$i<=5;$i++){
+				for ($i=5;$i>=0;--$i) {
 					$OSScan = $lines[$lineNumber-$i];
-					if(preg_match("/ clientdata: (.*) /", $OSScan)){
+					if (preg_match("/ clientdata: (.*) /", $OSScan)) {
 						$playerOSTrimmed = trim($OSScan,11);
 						$playerOSRaw = false;
 						preg_match("/ clientdata: (.*) /", $playerOSTrimmed, $playerOSRaw);
 						$playerOS = $playerOSRaw[1];
-						break;
+						break;						
 					}
 				}
-				$playerData = utf8_encode($lines[$lineNumber+1]); //utf8
-				$ipUnfiltered = array();
-				$usgnUnfiltered = array();
-				preg_match("/is using IP (.*) and/", $playerData, $ipUnfiltered);
-				$playerIPRawDiv = explode(":", $ipUnfiltered[1]);
-				$playerIP = $playerIPRawDiv[0];
-				$playerPort = $playerIPRawDiv[1];
-				$playerUSGN = (preg_match("/and U.S.G.N. ID/", $playerData)) ? (int)trim(substr($playerData, strpos($playerData, "and U.S.G.N. ID")+17)) : false;
+
+				$playerName = $playerData[1];
+				$playerIP = $playerData[2];
+				$playerPort = (int) $playerData[3];
+				$playerUSGN = ($playerData[4] === false) ? false : (int) $playerData[4];
+
 				//check if a player exists
-				if(array_key_exists($player, $array["player"])){
+				if(array_key_exists($playerName, $array["player"])){
 					//if player exists, check if it's player data array type 1 or 2
 					//if it's a type 1 then update or convert to type 2
-					//echo $player." EXISTS <br>";
-					if(array_key_exists("ip", $array["player"][$player])){
+					//echo $playerName." EXISTS <br>";
+					if(array_key_exists("ip", $array["player"][$playerName])){
 						//echo $player." IS TYPE 1 <br>";
 						//if it's the same ip under the same name
-						if($array["player"][$player]["ip"] == $playerIP){
+						if($array["player"][$playerName]["ip"] == $playerIP){
 							//echo $player." TYPE 1 IS SAME PLAYER ".$playerIP."<br>";
-							$array["player"][$player]["connect"][] = (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3));
+							$array["player"][$playerName]["connect"][] = (int)$this->toUnixTimestamp($array["date"], $time);
 						}else{
-							//echo $player." TYPE 1 IS DIFFERENT PLAYER ".$playerIP."<br>";
+							//echo $playerName." TYPE 1 IS DIFFERENT PLAYER ".$playerIP."<br>";
 						//if it's a different ip under the same name
 						//then convert to data type 2 & update
 							//backup previous type 1
-							$tempPlayerArray = $array["player"][$player];
+							$tempPlayerArray = $array["player"][$playerName];
 							//dissolve the data array
-							$array["player"][$player] = null;
+							$array["player"][$playerName] = null;
 							//recreate data array
-							$array["player"][$player] = array();
+							$array["player"][$playerName] = array();
 							//register new data
-							$array["player"][$player][] = array(
-								//"name"=>$player,
+							$array["player"][$playerName][] = array(
+								"name"=>$playerName,
 								"usgn"=>$playerUSGN,
 								"ip"=>$playerIP,
 								"port"=>$playerPort,
 								"os"=>$playerOS,
 								"connect"=>array(
-										(int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3))
+										(int)$this->toUnixTimestamp($array["date"], $time),
 									),
 								"disconnect"=>array(),
-								"unparsed"=>trim(substr($playerData, 11)),
+								"team"=>array("counter-terrorist"=>array(),"terrorist"=>array(),"spectator"=>array(),"all"=>array()),
+								"kills"=>array(),
+								"deaths"=>array(),
+								//"unparsed"=>$playerDataRaw,
 							);
 							//restore previous as type 2
-							$array["player"][$player][] = $tempPlayerArray;
+							$array["player"][$playerName][] = $tempPlayerArray;
 						}
 					}else{
 						//echo $player." IS TYPE 2<br>";
 						//if it's a type 2 then check if player is registered in type 2 & update
 						//else register a new one
 						$exists = false;
-						foreach ($array["player"][$player] as $key => $data) {
+						foreach ($array["player"][$playerName] as $key => $data) {
 							if($data["ip"] == $playerIP){
 								//player IP exists // update
 								//echo $player." TYPE 2 IS SAME PLAYER ".$playerIP."<br>";
-								$array["player"][$player][$key]["connect"][] = (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3));
+								$array["player"][$playerName][$key]["connect"][] = (int)$this->toUnixTimestamp($array["date"], $time);
 								$exists = true;
 								break;
 							}
@@ -178,37 +191,44 @@ class LogMiner {
 						if(!$exists){
 							//register new player
 							//echo $player." TYPE 2 IS DIFFERENT PLAYER ".$playerIP."<br>";
-							$array["player"][$player][] = array(
-								//"name"=>$player,
+							$array["player"][$playerName][] = array(
+								"name"=>$playerName,
 								"usgn"=>$playerUSGN,
 								"ip"=>$playerIP,
 								"port"=>$playerPort,
 								"os"=>$playerOS,
 								"connect"=>array(
-										(int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3))
+										(int)$this->toUnixTimestamp($array["date"], $time),
 									),
 								"disconnect"=>array(),
-								"unparsed"=>trim(substr($playerData, 11)),
+								"team"=>array("counter-terrorist"=>array(),"terrorist"=>array(),"spectator"=>array(),"all"=>array()),
+								"kills"=>array(),
+								"deaths"=>array(),
+								//"unparsed"=>$playerDataRaw,
 							);
 						}
 					}
 				}else{
 					//if player does not exist, then register new type 1
 					//echo $player." DOESNT EXIST ".$playerIP."<br>";
-					$array["player"][$player] = array(
-						//"name"=>$player,
+					$array["player"][$playerName] = array(
+						"name"=>$playerName,
 						"usgn"=>$playerUSGN,
 						"ip"=>$playerIP,
 						"port"=>$playerPort,
 						"os"=>$playerOS,
 						"connect"=>array(
-								(int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3))
+								(int)$this->toUnixTimestamp($array["date"], $time),
 							),
 						"disconnect"=>array(),
-						"unparsed"=>trim(substr($playerData, 11)),
+						"team"=>array("counter-terrorist"=>array(),"terrorist"=>array(),"spectator"=>array(),"all"=>array()),
+						"kills"=>array(),
+						"deaths"=>array(),
+						//"unparsed"=>$playerDataRaw,
 					);
 				}
-			}elseif(preg_match("/has left the game/", $line)){
+
+			}elseif(preg_match("/(.*) has left the game/", $line)){
 				$playerRaw = utf8_encode(trim(substr($line,11)));
 				$playerRawArr = array();
 				$reason = false;
@@ -227,7 +247,11 @@ class LogMiner {
 					$array["player"][$player]["disconnect"][ (int)$this->toUnixTimestamp($array["date"],substr($line, 1, strpos($line, $playerRaw)-3)) ] = $reason;
 				}
 			}elseif(preg_match("/----- Mapchange -----/", $line)){
-				$array["server"]["map-changes"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, -24));
+				if (preg_match("/load map '(.*)'/", $lines[$lineNumber+2])) {
+					$mapRaw = array();
+					preg_match("/load map '(.*)'/", $lines[$lineNumber+2], $mapRaw);
+					$array["server"]["map-changes"][$this->toUnixTimestamp($array["date"],substr($line, 1, 8))] = $mapRaw[1];
+				}
 				//$array["server"]["map-changes"][] = substr($line, 1, -24); in hh:mm:ss format
 			}elseif(preg_match("/adding transfer file: /", $line)){
 				$filtered = (string) trim(substr($line, 33));
@@ -242,6 +266,46 @@ class LogMiner {
 				if(!in_array($filtered, $array["server"]["missing-transfer-files"])){
 					$array["server"]["missing-transfer-files"][] = $filtered;
 				}
+			}elseif(preg_match("/stats generated in (.*) ms!/", $line)){
+				$array["server"]["stats-generated"][$this->toUnixTimestamp($array["date"],substr($line, 1, 8))] = substr($line, 11);
+			}elseif(preg_match("/(.*) joins the (.*) Forces/", $line)){
+				$playerDataRaw = utf8_encode(substr($line, 11));
+				$playerData = array();
+				preg_match("/(.*) joins the (.*) Forces/", $playerDataRaw, $playerData);
+				$playerName = trim($playerData[1]);
+				$playerTeam = strtolower(trim($playerData[2]));
+				if (array_key_exists($playerName, $array["player"]) && !array_key_exists(0, $array["player"][$playerName])) {
+					$array["player"][$playerName]["team"]["all"][$this->toUnixTimestamp($array["date"],substr($line, 1, 8))] = $playerTeam;
+					$array["player"][$playerName]["team"][$playerTeam][] = $this->toUnixTimestamp($array["date"],substr($line, 1, 8));
+					//echo $playerName." exists and is now team ".$playerTeam."<br>";
+				}				
+			}elseif(preg_match("/(.*) is now a spectator/", $line)){
+				$playerDataRaw = utf8_encode(substr($line, 11));
+				$playerData = array();
+				preg_match("/(.*) is now a spectator/", $playerDataRaw, $playerData);
+				$playerName = trim($playerData[1]);
+				if (array_key_exists($playerName, $array["player"]) && !array_key_exists(0, $array["player"][$playerName])) {
+					$array["player"][$playerName]["team"]["all"][$this->toUnixTimestamp($array["date"],substr($line, 1, 8))] = $playerTeam;
+					$array["player"][$playerName]["team"]["spectator"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, 8));
+				}
+			}elseif(preg_match("/(.*) killed (.*) with (.*)/", $line)) {
+				$playerDataRaw = utf8_encode(substr($line, 11));
+				$playerData = array();
+				preg_match("/(.*) killed (.*) with (.*)/", $playerDataRaw, $playerData);
+				$playerName = trim($playerData[1]);
+				$playerKilled = trim($playerData[2]);
+				$playerWeapon = trim($playerData[3]);
+				if (array_key_exists($playerName, $array["player"]) && !array_key_exists(0, $array["player"][$playerName])) {
+					$array["player"][$playerName]["kills"][$this->toUnixTimestamp($array["date"],substr($line, 1, 8))] = array("victim"=>$playerKilled, "weapon"=>$playerWeapon);
+				}				
+			}elseif(preg_match("/(.*) died/", $line)) {
+				$playerDataRaw = utf8_encode(substr($line, 11));
+				$playerData = array();
+				preg_match("/(.*) died/", $playerDataRaw, $playerData);
+				$playerName = trim($playerData[1]);
+				if (array_key_exists($playerName, $array["player"]) && !array_key_exists(0, $array["player"][$playerName])) {
+					$array["player"][$playerName]["deaths"][] = $this->toUnixTimestamp($array["date"],substr($line, 1, 8));
+				}				
 			}
 		}
 		//return $array;
@@ -276,16 +340,20 @@ class LogMiner {
 	 * Queue the given file/directory files
 	 */
 	private function load($fileOrDir) {
-		if(is_dir($fileOrDir)){
-			$this->directory = $this->scanDirectory($fileOrDir);
-			return (count($this->directory) > 0) ? true : false; 
-		}else{
-			if(file_exists($fileOrDir)) {
-				array_push($this->directory, $fileOrDir);
-			}else{
-				return false;
+		if (is_array($fileOrDir)) {
+			foreach ($fileOrDir as $key => $file) {
+				array_push($this->directory, $file);
 			}
-		}
+			return true;
+		} elseif (is_string($fileOrDir)) {
+			if (is_dir($fileOrDir)) {
+				$this->directory = $this->scanDirectory($fileOrDir);
+				return (count($this->directory) > 0) ? true : false;
+			} elseif (file_exists($fileOrDir)) {
+				array_push($this->directory, $fileOrDir);
+				return true;
+			}
+		} return false;
 	}
 
 	/*
@@ -359,16 +427,4 @@ class LogMiner {
 	}
 }
 
-require 'Ubench.php';
-$ubench = new Ubench;
-$ubench->start();
-$miner = new LogMiner;
-$extracted = $miner->Extract("logs");
-//var_dump($extracted[1462042832]["player"]["copy"]);
-$miner->ExtractedToJSON($extracted, true);
-$ubench->end();
-echo "Processed ".count($extracted)." log(s) in ".$ubench->getTime()."<br>";
-echo "Memory Usage: ".$ubench->getMemoryUsage()."<br>";
-echo "Memory Peak: ".$ubench->getMemoryPeak()."<br>";
-var_dump($extracted);
 ?>
